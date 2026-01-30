@@ -1,0 +1,5 @@
+{
+  "name": "Vibe Audit - Ship-Ready Gate",
+  "description": "A modern ship-readiness tool for vibe-coders that scans codebases for security, privacy, and production readiness, generating actionable tickets and reports.",
+  "requestFramePermissions": []
+}
