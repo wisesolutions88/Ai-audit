@@ -1,7 +1,7 @@
 
 import React from 'react';
 import { SecretLeak, Severity } from '../types';
-import { ShieldAlert, Key, Terminal, ArrowRight } from 'lucide-react';
+import { ShieldAlert, Key, Terminal } from 'lucide-react';
 
 interface SecretScannerProps {
   leaks: SecretLeak[];
@@ -15,7 +15,7 @@ const severityStyles = {
 };
 
 const SecretScanner: React.FC<SecretScannerProps> = ({ leaks }) => {
-  if (leaks.length === 0) {
+  if (!leaks || leaks.length === 0) {
     return (
       <div className="bg-green-500/5 border border-green-500/20 rounded-2xl p-6 text-center">
         <p className="text-xs font-bold text-green-400 uppercase tracking-widest">No Hardcoded Secrets Detected</p>
@@ -33,17 +33,17 @@ const SecretScanner: React.FC<SecretScannerProps> = ({ leaks }) => {
           <div key={idx} className="bg-red-500/5 border border-red-500/10 rounded-xl p-4 space-y-3">
             <div className="flex items-center justify-between">
               <div className="flex items-center space-x-2">
-                <ShieldAlert className={`w-4 h-4 ${severityStyles[leak.severity]}`} />
-                <span className="text-xs font-black text-gray-200 uppercase tracking-wider">{leak.keyType}</span>
+                <ShieldAlert className={`w-4 h-4 ${severityStyles[leak.severity] || severityStyles[Severity.MEDIUM]}`} />
+                <span className="text-xs font-black text-gray-200 uppercase tracking-wider">{leak.keyType || 'Unknown Secret'}</span>
               </div>
-              <span className="text-[10px] font-mono text-gray-500">{leak.file}</span>
+              <span className="text-[10px] font-mono text-gray-500">{leak.file || 'unknown'}</span>
             </div>
             <div className="bg-black/40 rounded-lg p-3 font-mono text-[10px] text-red-200/60 overflow-x-auto whitespace-pre border border-red-500/10">
-              {leak.snippet}
+              {leak.snippet || '[redacted]'}
             </div>
             <div className="flex items-start space-x-2 bg-black/20 p-2 rounded-lg border border-gray-800">
               <Terminal className="w-3 h-3 text-indigo-400 mt-0.5 shrink-0" />
-              <p className="text-[10px] text-indigo-300 leading-normal">{leak.remediation}</p>
+              <p className="text-[10px] text-indigo-300 leading-normal">{leak.remediation || 'Remove sensitive value from source.'}</p>
             </div>
           </div>
         ))}

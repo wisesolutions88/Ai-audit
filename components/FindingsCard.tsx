@@ -50,6 +50,11 @@ const FindingsCard: React.FC<FindingsCardProps> = ({ finding }) => {
   };
 
   const likelihoodColor = finding.likelihood > 0.7 ? 'text-red-400' : finding.likelihood > 0.4 ? 'text-yellow-400' : 'text-gray-400';
+  
+  // Defensive defaults for evidence
+  const evidenceFile = finding.evidence?.file || 'unknown_file';
+  const evidenceLine = finding.evidence?.lineRange || '??';
+  const evidenceSnippet = finding.evidence?.snippet || '// No snippet available';
 
   return (
     <div className={`border rounded-2xl transition-all duration-500 overflow-hidden ${isOpen ? 'bg-gray-900/60 border-gray-700 shadow-2xl' : 'bg-gray-800/20 border-gray-800 hover:border-gray-700'}`}>
@@ -64,7 +69,7 @@ const FindingsCard: React.FC<FindingsCardProps> = ({ finding }) => {
           <div className="flex-1 min-w-0">
             <h3 className="font-bold text-gray-100 text-lg leading-tight truncate">{finding.title}</h3>
             <div className="flex flex-wrap items-center gap-3 mt-1.5">
-              <span className={`text-[10px] font-black px-2 py-0.5 rounded border uppercase tracking-wider ${severityStyles[finding.severity]}`}>
+              <span className={`text-[10px] font-black px-2 py-0.5 rounded border uppercase tracking-wider ${severityStyles[finding.severity] || severityStyles[Severity.MEDIUM]}`}>
                 {finding.severity}
               </span>
               {finding.category === Category.PRIVACY && (
@@ -78,12 +83,12 @@ const FindingsCard: React.FC<FindingsCardProps> = ({ finding }) => {
                 </span>
               )}
               <span className="text-[10px] text-gray-500 font-mono truncate max-w-[200px] hidden sm:block">
-                {finding.evidence.file}:{finding.evidence.lineRange}
+                {evidenceFile}:{evidenceLine}
               </span>
               <div className="flex items-center space-x-1 px-2 py-0.5 bg-gray-950/50 rounded-full border border-gray-800">
                  <Zap className={`w-3 h-3 ${likelihoodColor} fill-current`} />
                  <span className={`text-[10px] font-black ${likelihoodColor} uppercase tracking-tight`}>
-                  {Math.round(finding.likelihood * 100)}% LIKELIHOOD
+                  {Math.round((finding.likelihood || 0) * 100)}% LIKELIHOOD
                  </span>
               </div>
             </div>
@@ -168,10 +173,10 @@ const FindingsCard: React.FC<FindingsCardProps> = ({ finding }) => {
             </h4>
             <div className="bg-black/50 rounded-2xl p-5 border border-gray-800/80 font-mono text-xs overflow-x-auto whitespace-pre leading-relaxed shadow-inner">
               <div className="flex space-x-4 mb-2 opacity-30 select-none">
-                <span className="text-gray-500 text-[10px]">{finding.evidence.file}</span>
-                <span className="text-gray-500 text-[10px]">L:{finding.evidence.lineRange}</span>
+                <span className="text-gray-500 text-[10px]">{evidenceFile}</span>
+                <span className="text-gray-500 text-[10px]">L:{evidenceLine}</span>
               </div>
-              <code className="text-indigo-200/90">{finding.evidence.snippet}</code>
+              <code className="text-indigo-200/90">{evidenceSnippet}</code>
             </div>
           </section>
 
@@ -182,7 +187,7 @@ const FindingsCard: React.FC<FindingsCardProps> = ({ finding }) => {
               </h4>
             </div>
             
-            <p className="text-sm text-gray-300 font-medium leading-relaxed">{finding.fixGuidance.explanation}</p>
+            <p className="text-sm text-gray-300 font-medium leading-relaxed">{finding.fixGuidance?.explanation || 'No detailed remediation steps provided.'}</p>
             
             <div className="grid grid-cols-1 gap-4">
               <div className="space-y-2">
@@ -191,7 +196,7 @@ const FindingsCard: React.FC<FindingsCardProps> = ({ finding }) => {
                   <span className="text-[10px] font-black text-red-400 uppercase tracking-widest">At-Risk Pattern</span>
                 </div>
                 <div className="bg-red-500/5 border border-red-500/10 rounded-xl p-4 font-mono text-xs opacity-60">
-                  <code className="text-red-200/70">{finding.evidence.snippet.split('\n')[0]}...</code>
+                  <code className="text-red-200/70">{evidenceSnippet.split('\n')[0]}...</code>
                 </div>
               </div>
 
@@ -207,7 +212,7 @@ const FindingsCard: React.FC<FindingsCardProps> = ({ finding }) => {
                   <span className="text-[10px] font-black text-green-400 uppercase tracking-widest">Recommended Fix</span>
                 </div>
                 <div className="bg-green-500/10 border border-green-500/20 rounded-xl p-4 font-mono text-xs shadow-2xl">
-                  <code className="text-green-300">{finding.fixGuidance.alternative}</code>
+                  <code className="text-green-300">{finding.fixGuidance?.alternative || '// remediation logic pending'}</code>
                 </div>
               </div>
             </div>
