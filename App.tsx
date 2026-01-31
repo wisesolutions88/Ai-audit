@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { 
   Rocket, 
   ShieldCheck, 
@@ -33,7 +33,8 @@ import {
   Fingerprint,
   LayoutDashboard,
   ArrowLeft,
-  Trash2
+  Trash2,
+  Key
 } from 'lucide-react';
 import { performVibeAudit, generateAudioBriefing } from './services/geminiService';
 import { parseGithubUrl, fetchRepoContents } from './services/githubService';
@@ -87,9 +88,12 @@ const App: React.FC = () => {
   const [fullArchive, setFullArchive] = useState<AuditReport[]>([]);
   const [isBriefingLoading, setIsBriefingLoading] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
+  const [isPermissionError, setIsPermissionError] = useState(false);
+  
+  const scanTimerRef = useRef<number | null>(null);
+  const [scanSeconds, setScanSeconds] = useState(0);
 
   useEffect(() => {
-    // Check session for secure view access
     const session = localStorage.getItem('vibe_audit_session');
     if (session === 'authorized') {
       setIsAuthenticated(true);
@@ -106,7 +110,7 @@ const App: React.FC = () => {
   }, []);
 
   const saveToArchive = (newReport: AuditReport) => {
-    const updated = [newReport, ...fullArchive].slice(0, 100); // Keep last 100 audits
+    const updated = [newReport, ...fullArchive].slice(0, 100);
     setFullArchive(updated);
     localStorage.setItem('vibe_audit_full_archive', JSON.stringify(updated));
   };
@@ -117,9 +121,28 @@ const App: React.FC = () => {
     localStorage.setItem('vibe_audit_full_archive', JSON.stringify(updated));
   };
 
+  const handleFixPermissions = async () => {
+    // @ts-ignore
+    if (window.aistudio?.openSelectKey) {
+      // @ts-ignore
+      await window.aistudio.openSelectKey();
+      setIsPermissionError(false);
+      setStatus('IDLE');
+      setError(null);
+    }
+  };
+
   const handleAudit = async () => {
     setStatus('SCANNING');
     setError(null);
+    setIsPermissionError(false);
+    setScanSeconds(0);
+    
+    // Start heartbeat timer
+    scanTimerRef.current = window.setInterval(() => {
+      setScanSeconds(s => s + 1);
+    }, 1000);
+
     let projectName = inputMode === 'GITHUB' ? githubUrl.split('/').pop() || 'Repository' : 'Source Snippet';
     
     try {
@@ -142,8 +165,17 @@ const App: React.FC = () => {
       setStatus('REPORTING');
       setView('DASHBOARD');
     } catch (err: any) {
-      setError(err.message || 'Audit connection failed. The project vibes were too complex or API limits were hit.');
+      console.error("Audit catch-block error:", err);
+      const errorMsg = err.message || JSON.stringify(err);
+      if (errorMsg.includes('403') || errorMsg.includes('PERMISSION_DENIED') || errorMsg.includes('permission')) {
+        setIsPermissionError(true);
+        setError("Vibe Check Failed: Your API key doesn't have permissions for Gemini 3 Pro. Please select a key from a paid GCP project.");
+      } else {
+        setError(errorMsg);
+      }
       setStatus('ERROR');
+    } finally {
+      if (scanTimerRef.current) clearInterval(scanTimerRef.current);
     }
   };
 
@@ -158,8 +190,11 @@ const App: React.FC = () => {
       source.buffer = audioBuffer;
       source.connect(audioCtx.destination);
       source.start();
-    } catch (e) {
+    } catch (e: any) {
       console.error("Briefing failed", e);
+      if (e.message.includes('403') || e.message.includes('PERMISSION_DENIED')) {
+        alert("Audio briefing failed due to permission issues. Try updating your API key.");
+      }
     } finally {
       setIsBriefingLoading(false);
     }
@@ -183,7 +218,6 @@ const App: React.FC = () => {
     window.print();
   };
 
-  // Header Logic
   const renderHeader = () => (
     <header className="border-b border-gray-800 bg-gray-950/80 backdrop-blur-md sticky top-0 z-50 no-print">
       <div className="max-w-7xl mx-auto px-4 h-16 flex items-center justify-between">
@@ -218,16 +252,11 @@ const App: React.FC = () => {
                 <LogOut className="w-5 h-5" />
              </button>
            )}
-
-           <a href="https://github.com" target="_blank" rel="noreferrer" className="text-gray-400 hover:text-white transition-colors hidden sm:block">
-            <Github className="w-6 h-6" />
-           </a>
         </div>
       </div>
     </header>
   );
 
-  // Home View (Public)
   const renderHome = () => (
     <div className="max-w-5xl mx-auto space-y-12 animate-in fade-in duration-700 slide-in-from-bottom-4">
       <div className="text-center space-y-8">
@@ -271,7 +300,6 @@ const App: React.FC = () => {
     </div>
   );
 
-  // Result View
   const renderResult = () => report && (
     <div className="space-y-12 animate-in fade-in slide-in-from-bottom-12 duration-700">
       <div className="flex items-center justify-between no-print">
@@ -371,7 +399,6 @@ const App: React.FC = () => {
     </div>
   );
 
-  // Secure Archive Dashboard
   const renderArchive = () => (
     <div className="space-y-12 animate-in fade-in slide-in-from-bottom-4 duration-500">
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
@@ -389,8 +416,8 @@ const App: React.FC = () => {
               type="text" 
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Search projects by name..."
-              className="w-full bg-gray-900/50 border border-gray-800 rounded-2xl py-3 pl-11 pr-4 text-sm text-white placeholder-gray-700 focus:outline-none focus:border-indigo-500 transition-all shadow-inner"
+              placeholder="Search projects..."
+              className="w-full bg-gray-900/50 border border-gray-800 rounded-2xl py-3 pl-11 pr-4 text-sm text-white focus:outline-none focus:border-indigo-500 transition-all shadow-inner"
            />
         </div>
       </div>
@@ -404,51 +431,26 @@ const App: React.FC = () => {
                  onClick={() => { setReport(entry); setStatus('REPORTING'); setView('DASHBOARD'); }}
               >
                  <div className="absolute top-0 right-0 p-8 opacity-5 group-hover:scale-110 transition-transform"><ShieldCheck className="w-24 h-24 text-indigo-500" /></div>
-                 
                  <div className="flex items-center justify-between">
                     <div className="px-3 py-1 bg-gray-950 border border-gray-800 rounded-lg">
                        <span className="text-[10px] font-black text-gray-500 uppercase tracking-widest">{new Date(entry.timestamp || '').toLocaleDateString()}</span>
                     </div>
-                    <div className={`w-10 h-10 flex items-center justify-center rounded-xl font-black text-xs border ${
-                       entry.score > 80 ? 'bg-green-500/10 text-green-400 border-green-500/20' :
-                       entry.score > 50 ? 'bg-yellow-500/10 text-yellow-400 border-yellow-500/20' :
-                       'bg-red-500/10 text-red-400 border-red-500/20'
-                    }`}>
+                    <div className="w-10 h-10 flex items-center justify-center rounded-xl font-black text-xs border bg-indigo-500/10 text-indigo-400 border-indigo-500/20">
                        {entry.score}
                     </div>
                  </div>
-
                  <div className="space-y-2">
                     <h4 className="text-xl font-bold text-white group-hover:text-indigo-400 transition-colors truncate">{entry.projectName}</h4>
                     <p className="text-xs text-gray-500 line-clamp-2 leading-relaxed">{entry.summary}</p>
                  </div>
-
                  <div className="pt-4 border-t border-gray-800/50 flex items-center justify-between">
-                    <div className="flex -space-x-2">
-                       {entry.techStack.slice(0, 3).map((tech, i) => (
-                          <div key={i} className="w-8 h-8 rounded-full bg-gray-800 border-2 border-gray-900 flex items-center justify-center text-[8px] font-black text-gray-400 uppercase tracking-tighter" title={tech}>
-                             {tech.substring(0, 2)}
-                          </div>
-                       ))}
-                       {entry.techStack.length > 3 && (
-                          <div className="w-8 h-8 rounded-full bg-indigo-900/50 border-2 border-gray-900 flex items-center justify-center text-[8px] font-black text-indigo-400">
-                             +{entry.techStack.length - 3}
-                          </div>
-                       )}
-                    </div>
-                    <button 
-                       onClick={(e) => { e.stopPropagation(); deleteFromArchive(entry.timestamp || ''); }}
-                       className="p-2 text-gray-700 hover:text-red-500 transition-colors opacity-0 group-hover:opacity-100"
-                    >
-                       <Trash2 className="w-4 h-4" />
-                    </button>
+                    <button onClick={(e) => { e.stopPropagation(); deleteFromArchive(entry.timestamp || ''); }} className="p-2 text-gray-700 hover:text-red-500 transition-colors opacity-0 group-hover:opacity-100"><Trash2 className="w-4 h-4" /></button>
                  </div>
               </div>
            ))}
         </div>
       ) : (
         <div className="h-[40vh] flex flex-col items-center justify-center space-y-6 bg-gray-900/20 border border-gray-800 border-dashed rounded-[3rem]">
-           <div className="w-20 h-20 bg-gray-800 rounded-[2rem] flex items-center justify-center text-gray-600"><History className="w-10 h-10" /></div>
            <p className="text-gray-500 text-sm font-medium italic">No projects found in the secure archive.</p>
         </div>
       )}
@@ -468,19 +470,38 @@ const App: React.FC = () => {
             </div>
             <div className="text-center space-y-4 max-w-md">
               <h3 className="text-4xl font-black text-white tracking-tight">Audit in Progress</h3>
-              <div className="flex flex-col items-center space-y-2">
-                <p className="text-gray-400 text-lg text-center animate-pulse">{scanningMessage}</p>
-                <div className="w-full h-1 bg-gray-800 rounded-full overflow-hidden mt-4">
-                   <div className="h-full bg-indigo-500 animate-[loading_20s_ease-in-out_infinite]" style={{ width: '60%' }}></div>
+              <p className="text-gray-400 text-lg text-center animate-pulse">{scanningMessage}</p>
+              
+              <div className="flex flex-col items-center space-y-4 mt-6">
+                <div className="flex items-center space-x-2">
+                   <div className="w-1.5 h-1.5 bg-indigo-500 rounded-full animate-bounce delay-0"></div>
+                   <div className="w-1.5 h-1.5 bg-indigo-500 rounded-full animate-bounce delay-150"></div>
+                   <div className="w-1.5 h-1.5 bg-indigo-500 rounded-full animate-bounce delay-300"></div>
                 </div>
+                {scanSeconds > 15 && (
+                  <p className="text-[10px] font-black text-gray-600 uppercase tracking-widest animate-in fade-in duration-1000">
+                    Deep architectural reasoning active ({scanSeconds}s)...
+                  </p>
+                )}
               </div>
             </div>
           </div>
         ) : status === 'ERROR' ? (
           <div className="max-w-md mx-auto py-32 text-center space-y-10">
             <div className="w-28 h-28 bg-red-500/10 rounded-[2rem] flex items-center justify-center mx-auto text-red-500 border border-red-500/20 shadow-2xl"><AlertTriangle className="w-14 h-14" /></div>
-            <div className="space-y-4"><h3 className="text-4xl font-black text-white tracking-tight">Audit Failure</h3><p className="text-gray-400 text-lg leading-relaxed">{error}</p></div>
-            <button onClick={() => setStatus('IDLE')} className="bg-gray-800 hover:bg-gray-700 text-white px-12 py-4 rounded-2xl font-black transition-all border border-gray-700">RETRY</button>
+            <div className="space-y-4">
+               <h3 className="text-4xl font-black text-white tracking-tight">{isPermissionError ? 'Permission Denied' : 'Audit Failure'}</h3>
+               <p className="text-gray-400 text-lg leading-relaxed">{error}</p>
+            </div>
+            <div className="flex flex-col space-y-4">
+               {isPermissionError && (
+                 <button onClick={handleFixPermissions} className="bg-indigo-600 hover:bg-indigo-500 text-white px-12 py-4 rounded-2xl font-black transition-all shadow-xl shadow-indigo-600/20 flex items-center justify-center space-x-2">
+                   <Key className="w-5 h-5" />
+                   <span>Select Valid API Key</span>
+                 </button>
+               )}
+               <button onClick={() => setStatus('IDLE')} className="bg-gray-800 hover:bg-gray-700 text-white px-12 py-4 rounded-2xl font-black transition-all border border-gray-700">RETRY</button>
+            </div>
           </div>
         ) : view === 'ARCHIVE' ? (
           isAuthenticated ? renderArchive() : <AuthWall onAuthorized={() => { setIsAuthenticated(true); localStorage.setItem('vibe_audit_session', 'authorized'); }} />
